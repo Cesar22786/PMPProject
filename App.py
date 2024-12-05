@@ -150,22 +150,34 @@ st.write(f"Pesos del Portafolio ({objetivo}):", pd.DataFrame(port_weights, index
 
 # ====== BACKTESTING ====== #
 
+# ====== BACKTESTING ====== #
+
 st.header("Backtesting")
 
+# Validar si el benchmark está en los datos
 if benchmark_symbol not in rendimientos.columns:
     st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
 else:
-    port_returns, benchmark_returns = backtesting(port_weights, rendimientos, benchmark_symbol)
+    try:
+        # Ejecutar Backtesting
+        port_returns, benchmark_returns = backtesting(port_weights, rendimientos, benchmark_symbol)
 
-    fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-    fig_bt.update_layout(
-        title="Backtesting: Portafolio vs Benchmark",
-        xaxis_title="Fecha",
-        yaxis_title="Rendimientos Acumulados"
-    )
-    st.plotly_chart(fig_bt)
+        # Verificar si los datos tienen suficientes registros
+        if port_returns.empty or benchmark_returns.empty:
+            st.warning("No hay suficientes datos para realizar el Backtesting.")
+        else:
+            # Crear gráfico de Backtesting
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
+            fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
+            fig_bt.update_layout(
+                title="Backtesting: Portafolio vs Benchmark",
+                xaxis_title="Fecha",
+                yaxis_title="Rendimientos Acumulados"
+            )
+            st.plotly_chart(fig_bt)
+    except Exception as e:
+        st.error(f"Ocurrió un error durante el Backtesting: {e}")
 
 # ====== BLACK-LITTERMAN ====== #
 
