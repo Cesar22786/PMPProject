@@ -227,19 +227,6 @@ else:
     except Exception as e:
         st.error(f"Ocurrió un error durante el Backtesting: {e}")
 
-# ====== BLACK-LITTERMAN ====== #
-
-st.header("Modelo Black-Litterman")
-market_weights = np.array([1 / len(etfs)] * len(etfs))
-views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
-
-views = [float(x.strip()) for x in views_input.split(',')]
-confidence = confidence_input / 100
-
-bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-st.write("Rendimientos Ajustados por Black-Litterman:", pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
-
 # ====== GRÁFICOS DE DISTRIBUCIONES ====== #
 
 st.header("Distribuciones de Retornos")
