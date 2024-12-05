@@ -22,18 +22,6 @@ def descargar_datos(etfs, start_date, end_date):
         st.error(f"Error al descargar datos: {e}")
         return pd.DataFrame()
 
-# Función para verificar y descargar un benchmark
-def verificar_benchmark(benchmark_symbol, start_date, end_date):
-    try:
-        # Descargar datos del benchmark
-        benchmark_data = yf.download(benchmark_symbol, start=start_date, end=end_date)['Adj Close']
-        if benchmark_data.empty:
-            st.error(f"El benchmark '{benchmark_symbol}' no devolvió datos. Verifique el símbolo ingresado o intente con otro benchmark.")
-        return benchmark_data.ffill().dropna()
-    except Exception as e:
-        st.error(f"Error al descargar el benchmark '{benchmark_symbol}': {e}")
-        return pd.Series()
-
 # Calcular métricas básicas de los activos
 def calcular_metricas(data):
     rendimientos = data.pct_change().dropna()
@@ -43,6 +31,12 @@ def calcular_metricas(data):
     sortino = media / (rendimientos[rendimientos < 0].std() * np.sqrt(252))
     drawdown = (data / data.cummax() - 1).min()
     return rendimientos, media, volatilidad, sharpe, sortino, drawdown
+
+# Cálculo de VaR y CVaR
+def calcular_var_cvar(rendimientos, alpha=0.95):
+    var = rendimientos.quantile(1 - alpha)
+    cvar = rendimientos[rendimientos <= var].mean()
+    return var, cvar
 
 # Función para optimizar portafolios
 def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
@@ -121,15 +115,8 @@ benchmark_symbol = benchmarks_opciones[benchmark]
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
-# Descargar datos de los ETFs
-data = descargar_datos(etfs, start_date, end_date)
-
-# Verificar y agregar el Benchmark
-benchmark_data = verificar_benchmark(benchmark_symbol, start_date, end_date)
-if not benchmark_data.empty:
-    data[benchmark_symbol] = benchmark_data
-
-# Validar si los datos están disponibles
+# Descargar datos
+data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
 else:
@@ -138,6 +125,7 @@ else:
     # ====== ANÁLISIS DE ACTIVOS ====== #
 
     st.header("Análisis de Activos")
+    st.subheader("Estadísticas de los ETFs")
     stats_table = pd.DataFrame({
         "Rendimiento Anualizado": media,
         "Volatilidad Anualizada": volatilidad,
@@ -155,6 +143,19 @@ else:
     fig.update_layout(title="Rendimiento Acumulado por Activo", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
     st.plotly_chart(fig)
 
+    # ====== GRÁFICOS DE DISTRIBUCIONES ====== #
+
+    st.header("Distribuciones de Retornos")
+    for etf in etfs:
+        fig_hist = go.Figure()
+        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, name=f"{etf}"))
+        fig_hist.update_layout(
+            title=f"Distribución de Retornos para {etf}",
+            xaxis_title="Retorno",
+            yaxis_title="Frecuencia"
+        )
+        st.plotly_chart(fig_hist)
+
     # ====== OPTIMIZACIÓN DE PORTAFOLIOS ====== #
 
     st.header("Optimización de Portafolios")
@@ -166,11 +167,14 @@ else:
     # ====== BACKTESTING ====== #
 
     st.header("Backtesting")
+
     if benchmark_symbol not in data.columns:
-        st.warning(f"El benchmark '{benchmark_symbol}' no se encuentra en los datos. No se puede realizar el Backtesting.")
+        st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
     else:
         port_returns, benchmark_returns = backtesting(port_weights, rendimientos[etfs], benchmark_symbol)
-        if not port_returns.empty and not benchmark_returns.empty:
+        if port_returns.empty or benchmark_returns.empty:
+            st.warning("No hay suficientes datos para realizar el Backtesting.")
+        else:
             fig_bt = go.Figure()
             fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
             fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
@@ -180,3 +184,30 @@ else:
                 yaxis_title="Rendimientos Acumulados"
             )
             st.plotly_chart(fig_bt)
+
+    # ====== BLACK-LITTERMAN ====== #
+
+    st.header("Modelo Black-Litterman")
+    market_weights = np.array([1 / len(etfs)] * len(etfs))
+    views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
+    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):",0, 100, 50)
+
+    # Validar las vistas ingresadas
+    views = [float(x.strip()) for x in views_input.split(',')]
+    if len(views) != len(etfs):
+        st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
+    else:
+        confidence = confidence_input / 100
+        try:
+            # Calcular los retornos ajustados por Black-Litterman
+            bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
+            if bl_returns:
+                st.write("Rendimientos Ajustados por Black-Litterman:")
+                st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        except Exception as e:
+            st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
+
+    # ====== CONCLUSIONES ====== #
+
+    st.header("Conclusión")
+    st.write("Con base en los análisis realizados, puedes evaluar cuál portafolio o enfoque (Black-Litterman, optimización tradicional) maximiza tus objetivos financieros.")
