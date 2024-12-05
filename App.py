@@ -13,8 +13,14 @@ st.sidebar.title("Configuración de Análisis")
 
 # Función para descargar datos históricos
 def descargar_datos(etfs, start_date, end_date):
-    data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
-    return data.ffill().dropna()
+    try:
+        data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
+        if data.isnull().all().any():  # Verificamos si todo el dataframe tiene valores nulos
+            raise ValueError("Datos incompletos o nulos en la descarga.")
+        return data.ffill().dropna()
+    except Exception as e:
+        st.error(f"Error al descargar los datos: {e}")
+        return pd.DataFrame()  # Devuelve un DataFrame vacío en caso de error
 
 # Calcular métricas básicas de los activos
 def calcular_metricas(data):
@@ -25,12 +31,6 @@ def calcular_metricas(data):
     sortino = media / (rendimientos[rendimientos < 0].std() * np.sqrt(252))
     drawdown = (data / data.cummax() - 1).min()
     return rendimientos, media, volatilidad, sharpe, sortino, drawdown
-
-# Cálculo de VaR y CVaR
-def calcular_var_cvar(rendimientos, alpha=0.95):
-    var = rendimientos.quantile(1 - alpha)
-    cvar = rendimientos[rendimientos <= var].mean()
-    return var, cvar
 
 # Función para optimizar portafolios
 def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
