@@ -58,6 +58,8 @@ def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
 
 # Backtesting de portafolios
 def backtesting(port_weights, rendimientos, benchmark):
+    if benchmark not in rendimientos.columns:
+        raise KeyError(f"El benchmark '{benchmark}' no está en los datos.")
     portfolio_returns = (rendimientos * port_weights).sum(axis=1)
     benchmark_returns = rendimientos[benchmark]
     return portfolio_returns.cumsum(), benchmark_returns.cumsum()
@@ -82,13 +84,23 @@ st.sidebar.header("Parámetros de los ETFs")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas (por ejemplo: AGG,EMB,VTI,EEM,GLD):", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
 
-benchmark = st.sidebar.text_input("Ingrese el Benchmark:", "^GSPC")
+# Opciones de benchmarks
+benchmarks_opciones = {
+    "S&P 500": "^GSPC",
+    "Nasdaq": "^IXIC",
+    "Dow Jones": "^DJI",
+    "Russell 2000": "^RUT",
+    "MSCI World": "URTH",
+}
+benchmark = st.sidebar.selectbox("Seleccione el Benchmark:", options=benchmarks_opciones.keys())
+benchmark_symbol = benchmarks_opciones[benchmark]
 
+# Fechas de análisis
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
 # Descargar datos
-data = descargar_datos(etfs + [benchmark], start_date, end_date)
+data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
 # ====== ANÁLISIS DE ACTIVOS ====== #
@@ -139,13 +151,21 @@ st.write(f"Pesos del Portafolio ({objetivo}):", pd.DataFrame(port_weights, index
 # ====== BACKTESTING ====== #
 
 st.header("Backtesting")
-port_returns, benchmark_returns = backtesting(port_weights, rendimientos[etfs], benchmark)
 
-fig_bt = go.Figure()
-fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-fig_bt.update_layout(title="Backtesting: Portafolio vs Benchmark", xaxis_title="Fecha", yaxis_title="Rendimientos Acumulados")
-st.plotly_chart(fig_bt)
+if benchmark_symbol not in rendimientos.columns:
+    st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
+else:
+    port_returns, benchmark_returns = backtesting(port_weights, rendimientos, benchmark_symbol)
+
+    fig_bt = go.Figure()
+    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
+    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
+    fig_bt.update_layout(
+        title="Backtesting: Portafolio vs Benchmark",
+        xaxis_title="Fecha",
+        yaxis_title="Rendimientos Acumulados"
+    )
+    st.plotly_chart(fig_bt)
 
 # ====== BLACK-LITTERMAN ====== #
 
