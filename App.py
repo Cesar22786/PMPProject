@@ -17,9 +17,7 @@ def descargar_datos(etfs, start_date, end_date):
         data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
         if data.empty:
             raise ValueError("No se descargaron datos. Verifique los símbolos o las fechas.")
-        if data.isnull().values.any():
-            data = data.ffill().dropna()  # Llenar valores nulos hacia adelante y eliminar filas vacías
-        return data
+        return data.ffill().dropna()  # Llenar valores nulos y eliminar filas vacías
     except Exception as e:
         st.error(f"Error al descargar datos: {e}")
         return pd.DataFrame()
@@ -33,6 +31,12 @@ def calcular_metricas(data):
     sortino = media / (rendimientos[rendimientos < 0].std() * np.sqrt(252))
     drawdown = (data / data.cummax() - 1).min()
     return rendimientos, media, volatilidad, sharpe, sortino, drawdown
+
+# Cálculo de VaR y CVaR
+def calcular_var_cvar(rendimientos, alpha=0.95):
+    var = rendimientos.quantile(1 - alpha)
+    cvar = rendimientos[rendimientos <= var].mean()
+    return var, cvar
 
 # Función para optimizar portafolios
 def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
@@ -101,21 +105,19 @@ benchmark_symbol = benchmarks_opciones[benchmark]
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
-# Verificar que las fechas sean válidas
+# Validar fechas
 if start_date >= end_date:
     st.error("La fecha de inicio debe ser anterior a la fecha de fin.")
 else:
     data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
-    
-    # Verificar si el benchmark está en los datos
-    if benchmark_symbol not in data.columns:
-        st.error(f"El benchmark '{benchmark_symbol}' no está en los datos. Verifique el símbolo.")
+
+    if data.empty or benchmark_symbol not in data.columns:
+        st.error(f"No se pudieron descargar datos o el benchmark '{benchmark_symbol}' no está disponible.")
     else:
         rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
         # ====== ANÁLISIS DE ACTIVOS ====== #
         st.header("Análisis de Activos")
-        st.subheader("Estadísticas de los ETFs")
         stats_table = pd.DataFrame({
             "Rendimiento Anualizado": media,
             "Volatilidad Anualizada": volatilidad,
@@ -133,18 +135,6 @@ else:
         fig.update_layout(title="Rendimiento Acumulado por Activo", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
         st.plotly_chart(fig)
 
-        # ====== GRÁFICOS DE DISTRIBUCIONES ====== #
-        st.header("Distribuciones de Retornos")
-        for etf in etfs:
-            fig_hist = go.Figure()
-            fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, name=f"{etf}"))
-            fig_hist.update_layout(
-                title=f"Distribución de Retornos para {etf}",
-                xaxis_title="Retorno",
-                yaxis_title="Frecuencia"
-            )
-            st.plotly_chart(fig_hist)
-
         # ====== OPTIMIZACIÓN DE PORTAFOLIOS ====== #
         st.header("Optimización de Portafolios")
         objetivo = st.sidebar.selectbox("Seleccione el objetivo:", ["Sharpe", "Volatilidad Mínima"])
@@ -156,26 +146,28 @@ else:
         try:
             rendimientos_sin_benchmark = rendimientos[etfs]
             port_returns, benchmark_returns = backtesting(port_weights, rendimientos, benchmark_symbol)
-
-            # Gráfico de Backtesting
             fig_bt = go.Figure()
             fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
             fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-            fig_bt.update_layout(
-                title="Backtesting: Portafolio vs Benchmark",
-                xaxis_title="Fecha",
-                yaxis_title="Rendimientos Acumulados"
-            )
+            fig_bt.update_layout(title="Backtesting: Portafolio vs Benchmark", xaxis_title="Fecha", yaxis_title="Rendimientos Acumulados")
             st.plotly_chart(fig_bt)
         except Exception as e:
             st.error(f"Ocurrió un error durante el Backtesting: {e}")
 
         # ====== BLACK-LITTERMAN ====== #
         st.header("Modelo Black-Litterman")
+        market_weights = np.array([1 / len(etfs)] * len(etfs))
         views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-        views = [float(x.strip()) for x in views_input.split(',')]
+        confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
 
+        views = [float(x.strip()) for x in views_input.split(',')]
         if len(views) != len(etfs):
             st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
         else:
-            confidence_input = st.slider("Nivel de Confianza en las
+            confidence = confidence_input / 100
+            try:
+                bl_returns = black_litterman(media, rendimientos.cov() * 252, market_weights, views, confidence)
+                st.write("Rendimientos Ajustados por Black-Litterman:")
+                st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+            except Exception as e:
+                st.error(f"Ocurrió un error durante el cálculo del modelo
