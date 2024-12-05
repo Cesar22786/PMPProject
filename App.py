@@ -152,20 +152,20 @@ st.write(f"Pesos del Portafolio ({objetivo}):", pd.DataFrame(port_weights, index
 
 st.header("Backtesting")
 
-# Validar si el benchmark está en los datos
-if benchmark_symbol not in rendimientos.columns:
-    st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
+# Validar si los datos del benchmark existen y están alineados
+if benchmark_symbol not in data.columns:
+    st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados. Verifica la conexión y los símbolos ingresados.")
 else:
     try:
-        # Alinear los pesos con los ETFs, excluyendo el benchmark
+        # Excluir el benchmark de los datos de rendimientos para el portafolio
         rendimientos_sin_benchmark = rendimientos[etfs]
         port_returns, benchmark_returns = backtesting(port_weights, rendimientos_sin_benchmark, benchmark_symbol)
 
-        # Verificar si los datos tienen suficientes registros
+        # Verificar si hay datos suficientes para graficar
         if port_returns.empty or benchmark_returns.empty:
             st.warning("No hay suficientes datos para realizar el Backtesting.")
         else:
-            # Crear gráfico de Backtesting
+            # Crear el gráfico de Backtesting
             fig_bt = go.Figure()
             fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
             fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
@@ -185,47 +185,20 @@ market_weights = np.array([1 / len(etfs)] * len(etfs))
 views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
 confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
 
-# Validar longitud de las vistas
+# Validar las vistas ingresadas
 views = [float(x.strip()) for x in views_input.split(',')]
 if len(views) != len(etfs):
-    st.error(f"El número de vistas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
+    st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
 else:
     confidence = confidence_input / 100
 
     try:
-        # Calcular retornos ajustados por Black-Litterman
+        # Calcular los retornos ajustados por Black-Litterman
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
         st.write("Rendimientos Ajustados por Black-Litterman:")
         st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
     except Exception as e:
         st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
-
-st.header("Backtesting")
-
-# Validar si el benchmark está en los datos
-if benchmark_symbol not in rendimientos.columns:
-    st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
-else:
-    try:
-        # Ejecutar Backtesting
-        port_returns, benchmark_returns = backtesting(port_weights, rendimientos, benchmark_symbol)
-
-        # Verificar si los datos tienen suficientes registros
-        if port_returns.empty or benchmark_returns.empty:
-            st.warning("No hay suficientes datos para realizar el Backtesting.")
-        else:
-            # Crear gráfico de Backtesting
-            fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-            fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-            fig_bt.update_layout(
-                title="Backtesting: Portafolio vs Benchmark",
-                xaxis_title="Fecha",
-                yaxis_title="Rendimientos Acumulados"
-            )
-            st.plotly_chart(fig_bt)
-    except Exception as e:
-        st.error(f"Ocurrió un error durante el Backtesting: {e}")
 
 # ====== GRÁFICOS DE DISTRIBUCIONES ====== #
 
