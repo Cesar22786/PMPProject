@@ -13,8 +13,14 @@ st.sidebar.title("Configuración de Análisis")
 
 # Función para descargar datos históricos
 def descargar_datos(etfs, start_date, end_date):
-    data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
-    return data.ffill().dropna()
+    try:
+        data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
+        if data.empty:
+            st.error("No se pudieron descargar datos para los símbolos ingresados. Verifique las fechas o los símbolos.")
+        return data.ffill().dropna()
+    except Exception as e:
+        st.error(f"Error al descargar datos: {e}")
+        return pd.DataFrame()
 
 # Calcular métricas básicas de los activos
 def calcular_metricas(data):
@@ -58,24 +64,34 @@ def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
 
 # Backtesting de portafolios
 def backtesting(port_weights, rendimientos, benchmark):
-    if benchmark not in rendimientos.columns:
-        raise KeyError(f"El benchmark '{benchmark}' no está en los datos.")
-    portfolio_returns = (rendimientos * port_weights).sum(axis=1)
-    benchmark_returns = rendimientos[benchmark]
-    return portfolio_returns.cumsum(), benchmark_returns.cumsum()
+    try:
+        if benchmark not in rendimientos.columns:
+            raise KeyError(f"El benchmark '{benchmark}' no está en los datos.")
+        portfolio_returns = (rendimientos * port_weights).sum(axis=1)
+        benchmark_returns = rendimientos[benchmark]
+        return portfolio_returns.cumsum(), benchmark_returns.cumsum()
+    except Exception as e:
+        st.error(f"Error durante el Backtesting: {e}")
+        return pd.Series(), pd.Series()
 
 # Black-Litterman Model
 def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-    tau = 0.05
-    pi = np.dot(cov_matrix, market_weights)
+    try:
+        tau = 0.05
+        pi = np.dot(cov_matrix, market_weights)
 
-    Q = np.array(views).reshape(-1, 1)
-    P = np.eye(len(market_weights))
-    omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
+        Q = np.array(views).reshape(-1, 1)
+        if len(Q) != len(market_weights):
+            raise ValueError("El número de vistas no coincide con el número de activos.")
+        P = np.eye(len(market_weights))
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
 
-    M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-    BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-    return BL_returns.flatten()
+        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
+        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
+        return BL_returns.flatten()
+    except Exception as e:
+        st.error(f"Error en el modelo Black-Litterman: {e}")
+        return []
 
 # ====== INTERFAZ ====== #
 
@@ -152,37 +168,29 @@ else:
 
     st.header("Backtesting")
 
-    # Validar si los datos del benchmark existen y están alineados
     if benchmark_symbol not in data.columns:
         st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
     else:
-        try:
-            rendimientos_sin_benchmark = rendimientos[etfs]
-            port_returns, benchmark_returns = backtesting(port_weights, rendimientos_sin_benchmark, benchmark_symbol)
-
-            # Verificar si hay datos suficientes para graficar
-            if port_returns.empty or benchmark_returns.empty:
-                st.warning("No hay suficientes datos para realizar el Backtesting.")
-            else:
-                # Crear el gráfico de Backtesting
-                fig_bt = go.Figure()
-                fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-                fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-                fig_bt.update_layout(
-                    title="Backtesting: Portafolio vs Benchmark",
-                    xaxis_title="Fecha",
-                    yaxis_title="Rendimientos Acumulados"
-                )
-                st.plotly_chart(fig_bt)
-        except Exception as e:
-            st.error(f"Ocurrió un error durante el Backtesting: {e}")
+        port_returns, benchmark_returns = backtesting(port_weights, rendimientos[etfs], benchmark_symbol)
+        if port_returns.empty or benchmark_returns.empty:
+            st.warning("No hay suficientes datos para realizar el Backtesting.")
+        else:
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
+            fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
+            fig_bt.update_layout(
+                title="Backtesting: Portafolio vs Benchmark",
+                xaxis_title="Fecha",
+                yaxis_title="Rendimientos Acumulados"
+            )
+            st.plotly_chart(fig_bt)
 
     # ====== BLACK-LITTERMAN ====== #
 
     st.header("Modelo Black-Litterman")
     market_weights = np.array([1 / len(etfs)] * len(etfs))
     views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
+    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):",0, 100, 50)
 
     # Validar las vistas ingresadas
     views = [float(x.strip()) for x in views_input.split(',')]
@@ -190,12 +198,12 @@ else:
         st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
     else:
         confidence = confidence_input / 100
-
         try:
             # Calcular los retornos ajustados por Black-Litterman
             bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-            st.write("Rendimientos Ajustados por Black-Litterman:")
-            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+            if bl_returns:
+                st.write("Rendimientos Ajustados por Black-Litterman:")
+                st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
         except Exception as e:
             st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
 
