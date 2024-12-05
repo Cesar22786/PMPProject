@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -6,21 +7,26 @@ import plotly.graph_objects as go
 from scipy.optimize import minimize
 
 # Configuración de la página
-st.set_page_config(page_title="Análisis Avanzado de Portafolios", layout="wide")
-st.sidebar.title("Configuración de Análisis")
+st.set_page_config(page_title="Análisis Avanzado de Portafolios", layout="wide", initial_sidebar_state="expanded")
 
 # ====== FUNCIONES PRINCIPALES ====== #
 
-# Función para descargar datos históricos
+# Guardar datos en CSV
+def guardar_datos_csv(data, filename):
+    data.to_csv(filename)
+    st.success(f"Datos guardados en {filename}.")
+
+# Descargar datos de Yahoo Finance
 def descargar_datos(etfs, start_date, end_date):
-    try:
-        data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
-        if data.empty:
-            st.error("No se pudieron descargar datos para los símbolos ingresados. Verifique las fechas o los símbolos.")
-        return data.ffill().dropna()
-    except Exception as e:
-        st.error(f"Error al descargar datos: {e}")
-        return pd.DataFrame()
+    with st.spinner(f"Descargando datos desde {start_date} hasta {end_date}..."):
+        try:
+            data = yf.download(etfs, start=start_date, end=end_date)['Adj Close']
+            if data.empty:
+                st.error("No se pudieron descargar datos para los símbolos ingresados. Verifique las fechas o los símbolos.")
+            return data.ffill().dropna()
+        except Exception as e:
+            st.error(f"Error al descargar datos: {e}")
+            return pd.DataFrame()
 
 # Calcular métricas básicas de los activos
 def calcular_metricas(data):
@@ -32,57 +38,30 @@ def calcular_metricas(data):
     drawdown = (data / data.cummax() - 1).min()
     return rendimientos, media, volatilidad, sharpe, sortino, drawdown
 
-# Cálculo de VaR y CVaR
-def calcular_var_cvar(rendimientos, alpha=0.95):
-    var = rendimientos.quantile(1 - alpha)
-    cvar = rendimientos[rendimientos <= var].mean()
-    return var, cvar
-
-# Función para optimizar portafolios
-def optimizar_portafolio(rendimientos, objetivo, tasa_libre_riesgo=0.02):
+# Optimizar portafolios
+def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     n = len(rendimientos.columns)
     mean_returns = rendimientos.mean() * 252
     cov_matrix = rendimientos.cov() * 252
 
-    def sharpe_ratio(weights):
+    def port_metrics(weights):
         port_return = np.dot(weights, mean_returns)
         port_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-        return -(port_return - tasa_libre_riesgo) / port_volatility
-
-    def min_volatility(weights):
-        return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-
-    if objetivo == "Sharpe":
-        objetivo_func = sharpe_ratio
-    else:
-        objetivo_func = min_volatility
+        sharpe = (port_return - tasa_libre_riesgo) / port_volatility
+        return -sharpe
 
     bounds = [(0, 1) for _ in range(n)]
     constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
-    result = minimize(objetivo_func, [1 / n] * n, bounds=bounds, constraints=constraints)
+    result = minimize(port_metrics, weights, bounds=bounds, constraints=constraints)
     return result.x, mean_returns, cov_matrix
 
-# Backtesting de portafolios
-def backtesting(port_weights, rendimientos, benchmark):
-    try:
-        if benchmark not in rendimientos.columns:
-            raise KeyError(f"El benchmark '{benchmark}' no está en los datos.")
-        portfolio_returns = (rendimientos * port_weights).sum(axis=1)
-        benchmark_returns = rendimientos[benchmark]
-        return portfolio_returns.cumsum(), benchmark_returns.cumsum()
-    except Exception as e:
-        st.error(f"Error durante el Backtesting: {e}")
-        return pd.Series(), pd.Series()
-
-# Black-Litterman Model
+# Modelo Black-Litterman
 def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
     try:
         tau = 0.05
         pi = np.dot(cov_matrix, market_weights)
 
         Q = np.array(views).reshape(-1, 1)
-        if len(Q) != len(market_weights):
-            raise ValueError("El número de vistas no coincide con el número de activos.")
         P = np.eye(len(market_weights))
         omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
 
@@ -96,11 +75,10 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
 # ====== INTERFAZ ====== #
 
 # Entrada de parámetros del usuario
-st.sidebar.header("Parámetros de los ETFs")
+st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas (por ejemplo: AGG,EMB,VTI,EEM,GLD):", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
 
-# Opciones de benchmarks
 benchmarks_opciones = {
     "S&P 500": "^GSPC",
     "Nasdaq": "^IXIC",
@@ -111,21 +89,33 @@ benchmarks_opciones = {
 benchmark = st.sidebar.selectbox("Seleccione el Benchmark:", options=benchmarks_opciones.keys())
 benchmark_symbol = benchmarks_opciones[benchmark]
 
-# Fechas de análisis
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
-# Descargar datos
+weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
+weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
+
+# Descarga de datos
+st.sidebar.header("Opciones de Descarga")
+guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
+
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
 else:
+    if guardar_csv:
+        guardar_datos_csv(data, "portafolio_datos.csv")
+
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
-    # ====== ANÁLISIS DE ACTIVOS ====== #
+    # ====== ANÁLISIS ====== #
+    st.header("Análisis del Portafolio")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
+    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
+    col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
-    st.header("Análisis de Activos")
-    st.subheader("Estadísticas de los ETFs")
+    st.subheader("Estadísticas Detalladas")
     stats_table = pd.DataFrame({
         "Rendimiento Anualizado": media,
         "Volatilidad Anualizada": volatilidad,
@@ -135,17 +125,7 @@ else:
     }).T
     st.dataframe(stats_table)
 
-    # Gráfico de rendimiento acumulado por activo
-    st.subheader("Rendimiento Acumulado por Activo")
-    fig = go.Figure()
-    for etf in etfs:
-        fig.add_trace(go.Scatter(x=data.index, y=(1 + rendimientos[etf]).cumprod() - 1, mode="lines", name=etf))
-    fig.update_layout(title="Rendimiento Acumulado por Activo", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
-    st.plotly_chart(fig)
-
-    # ====== GRÁFICOS DE DISTRIBUCIONES ====== #
-
-    st.header("Distribuciones de Retornos")
+    st.subheader("Distribución de Retornos")
     for etf in etfs:
         fig_hist = go.Figure()
         fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, name=f"{etf}"))
@@ -156,58 +136,42 @@ else:
         )
         st.plotly_chart(fig_hist)
 
-    # ====== OPTIMIZACIÓN DE PORTAFOLIOS ====== #
+    # ====== OPTIMIZACIÓN ====== #
+    st.header("Optimización del Portafolio")
+    opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
 
-    st.header("Optimización de Portafolios")
-    objetivo = st.sidebar.selectbox("Seleccione el objetivo:", ["Sharpe", "Volatilidad Mínima"])
-    port_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], objetivo)
-
-    st.write(f"Pesos del Portafolio ({objetivo}):", pd.DataFrame(port_weights, index=etfs, columns=["Pesos"]))
-
-    # ====== BACKTESTING ====== #
-
-    st.header("Backtesting")
-
-    if benchmark_symbol not in data.columns:
-        st.error(f"El benchmark '{benchmark}' no se encuentra en los datos descargados.")
-    else:
-        port_returns, benchmark_returns = backtesting(port_weights, rendimientos[etfs], benchmark_symbol)
-        if port_returns.empty or benchmark_returns.empty:
-            st.warning("No hay suficientes datos para realizar el Backtesting.")
-        else:
-            fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-            fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-            fig_bt.update_layout(
-                title="Backtesting: Portafolio vs Benchmark",
-                xaxis_title="Fecha",
-                yaxis_title="Rendimientos Acumulados"
-            )
-            st.plotly_chart(fig_bt)
+    st.subheader("Pesos Óptimos del Portafolio")
+    st.write(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
     # ====== BLACK-LITTERMAN ====== #
-
     st.header("Modelo Black-Litterman")
     market_weights = np.array([1 / len(etfs)] * len(etfs))
     views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):",0, 100, 50)
+    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
 
-    # Validar las vistas ingresadas
-    views = [float(x.strip()) for x in views_input.split(',')]
+    views = [float(v.strip()) for v in views_input.split(",")]
+
     if len(views) != len(etfs):
         st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
     else:
-        confidence = confidence_input / 100
         try:
-            # Calcular los retornos ajustados por Black-Litterman
+            confidence = confidence_input / 100
             bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-            if bl_returns:
-                st.write("Rendimientos Ajustados por Black-Litterman:")
-                st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+            st.write("Rendimientos Ajustados por Black-Litterman:")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
         except Exception as e:
-            st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
+            st.error(f"Error en el modelo Black-Litterman: {e}")
 
-    # ====== CONCLUSIONES ====== #
+    # ====== BACKTESTING ====== #
+    st.header("Backtesting")
+    port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
+    benchmark_returns = rendimientos[benchmark_symbol].cumsum()
 
-    st.header("Conclusión")
-    st.write("Con base en los análisis realizados, puedes evaluar cuál portafolio o enfoque (Black-Litterman, optimización tradicional) maximiza tus objetivos financieros.")
+    fig_bt = go.Figure()
+    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
+    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
+    fig_bt.update_layout(title="Backtesting: Portafolio vs Benchmark", xaxis_title="Fecha", yaxis_title="Rendimientos Acumulados")
+    st.plotly_chart(fig_bt)
+
+ 
+   
