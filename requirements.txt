@@ -4,3 +4,7 @@ xlrd
 exchange_calendars
 openpyxl
 yfinance
+streamlit
+numpy
+scipy
+pandas
