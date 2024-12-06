@@ -45,21 +45,10 @@ def agregar_fondo_y_gif():
         color: #ffffff !important;
         background-color: #333333;
     }
-    .gif-container {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 150px;
-        z-index: 10;
-    }
     </style>
-    <div class="gif-container">
-        <img src="https://art.pixilart.com/8ebf216d8b6c2f3.gif" alt="GIF" style="width:100%;border-radius:10px;box-shadow:0px 4px 10px rgba(0,0,0,0.5);">
-    </div>
     """
     st.markdown(fondo_html, unsafe_allow_html=True)
 
-# Llamar a la función para agregar el fondo y el GIF
 agregar_fondo_y_gif()
 
 # Guardar datos en CSV
@@ -89,6 +78,12 @@ def calcular_metricas(data):
     drawdown = (data / data.cummax() - 1).min()
     return rendimientos, media, volatilidad, sharpe, sortino, drawdown
 
+# Calcular VaR y CVaR
+def calcular_var_cvar(rendimientos, alpha=0.95):
+    var = rendimientos.quantile(1 - alpha)
+    cvar = rendimientos[rendimientos <= var].mean()
+    return var, cvar
+
 # Optimizar portafolios
 def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     n = len(rendimientos.columns)
@@ -105,38 +100,6 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
     result = minimize(port_metrics, weights, bounds=bounds, constraints=constraints)
     return result.x, mean_returns, cov_matrix
-
-# Modelo Black-Litterman
-def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-    try:
-        tau = 0.05  # Parámetro de escala
-        pi = np.dot(cov_matrix, market_weights)  # Retornos implícitos del mercado
-
-        # Validación de vistas
-        if len(views) != len(market_weights):
-            raise ValueError("El número de vistas no coincide con el número de activos seleccionados.")
-
-        Q = np.array(views).reshape(-1, 1)  # Vistas expresadas como matriz columna
-        P = np.eye(len(market_weights))  # Matriz identidad (1 vista por activo)
-
-        # Validar dimensiones de P y Q
-        if P.shape[0] != Q.shape[0]:
-            raise ValueError("Las dimensiones de la matriz P y las vistas Q no coinciden.")
-
-        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)  # Matriz de incertidumbre
-
-        # Cálculo de los retornos ajustados por Black-Litterman
-        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-
-        # Validación final del tamaño de BL_returns
-        if BL_returns.shape[0] != len(market_weights):
-            raise ValueError("El cálculo de Black-Litterman devolvió un tamaño inesperado. Verifique las vistas o los datos.")
-        return BL_returns.flatten()  # Retornar como arreglo unidimensional
-
-    except Exception as e:
-        st.error(f"Error en el modelo Black-Litterman: {e}")
-        return []
 
 # ====== Entrada de Parámetros del Usuario ====== #
 st.sidebar.header("Parámetros del Portafolio")
@@ -156,9 +119,6 @@ benchmark_symbol = benchmarks_opciones[benchmark]
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
-weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
-weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
-
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
 # ====== Descarga de Datos ====== #
@@ -170,6 +130,11 @@ else:
         guardar_datos_csv(data, "portafolio_datos.csv")
 
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
+
+    # Calcular VaR y CVaR para cada activo
+    var_cvar = {etf: calcular_var_cvar(rendimientos[etf]) for etf in etfs}
+    var_values = [var_cvar[etf][0] for etf in etfs]
+    cvar_values = [var_cvar[etf][1] for etf in etfs]
 
     # ====== Visualización de Métricas ====== #
     st.title("📊 Análisis del Portafolio")
@@ -184,28 +149,11 @@ else:
         "Volatilidad Anualizada": volatilidad,
         "Sharpe Ratio": sharpe,
         "Sortino Ratio": sortino,
-        "Drawdown": drawdown
+        "Drawdown": drawdown,
+        "VaR (95%)": var_values,
+        "CVaR (95%)": cvar_values
     }).T
     st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
-
-    # ====== Distribución de Retornos ====== #
-    st.subheader("Distribución de Retornos")
-    for etf in etfs:
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color="blue", opacity=0.75))
-        fig_hist.update_layout(
-            title=f"Distribución de Retornos para {etf}",
-            xaxis_title="Retorno",
-            yaxis_title="Frecuencia",
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_hist)
-
-    # ====== Optimización del Portafolio ====== #
-    st.header("🚀 Optimización del Portafolio")
-    opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
-    st.subheader("Pesos Óptimos del Portafolio")
-    st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
     # ====== Modelo Black-Litterman ====== #
     st.header("🔮 Modelo Black-Litterman")
@@ -220,17 +168,18 @@ else:
         if len(views) != len(etfs):
             st.warning("El número de vistas no coincide con el número de activos. Verifica las entradas.")
         else:
-            bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
+            bl_returns = black_litterman(media[etfs], rendimientos.cov(), market_weights, views, confidence)
             if bl_returns:
                 st.write("Retornos ajustados por Black-Litterman:")
                 st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
             else:
                 st.warning("No se pudo calcular Black-Litterman correctamente.")
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error en Black-Litterman: {e}")
 
     # ====== Backtesting ====== #
     st.header("📈 Backtesting")
+    opt_weights, _, _ = optimizar_portafolio(rendimientos[etfs], market_weights)
     port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
     benchmark_returns = rendimientos[benchmark_symbol].cumsum()
 
@@ -254,12 +203,23 @@ else:
         - **Sharpe Ratio:** Indica el rendimiento ajustado al riesgo, comparando el rendimiento con la volatilidad. Un valor más alto es mejor.
         - **Sortino Ratio:** Similar al Sharpe Ratio, pero solo considera la volatilidad negativa (pérdidas).
         - **Drawdown:** La caída máxima desde un pico hasta un valle en el valor del portafolio.
+        - **VaR (Value at Risk):** Representa la pérdida máxima esperada en un período determinado con un nivel de confianza especificado (95% en este caso).
+        - **CVaR (Conditional Value at Risk):** Representa el promedio de las pérdidas más severas más allá del VaR.
         - **Distribución de Retornos:** Histograma que muestra la frecuencia de los retornos observados para cada activo.
         - **Optimización del Portafolio:** Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
         - **Modelo Black-Litterman:** Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
         - **Backtesting:** Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
-        """)
- 
+        
+        ### Cómo usar este Dashboard
+        1. **Configurar los Parámetros:** Selecciona los activos (ETFs), fechas y el benchmark de interés en la barra lateral.
+        2. **Interpretar las Métricas:** Examina las métricas de rendimiento, riesgo y otras estadísticas detalladas para tomar decisiones informadas.
+        3. **Optimización del Portafolio:** Calcula los pesos óptimos del portafolio para mejorar su rendimiento ajustado al riesgo.
+        4. **Modelo Black-Litterman:** Incorpora tus propias vistas (opiniones) sobre los activos para ajustar los retornos esperados.
+        5. **Analizar el Backtesting:** Compara cómo habría rendido tu portafolio optimizado en comparación con el benchmark a lo largo del tiempo.
+
+       
+
+
 
 
 
