@@ -127,6 +127,7 @@ else:
     st.write(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
 # ====== BLACK-LITTERMAN ====== #
+# ====== BLACK-LITTERMAN ====== #
 st.header("🔮 Modelo Black-Litterman")
 
 market_weights = np.array([1 / len(etfs)] * len(etfs))
@@ -142,8 +143,15 @@ try:
             tau = 0.05
             pi = np.dot(cov_matrix, market_weights)
             Q = np.array(views).reshape(-1, 1)
+
+            # Validación de dimensiones
+            if Q.shape[0] != len(market_weights):
+                raise ValueError("El número de vistas no coincide con el número de activos.")
+
             P = np.eye(len(market_weights))
             omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
+            
+            # Inversa de la matriz combinada
             M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
             BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
             return BL_returns.flatten()
@@ -151,8 +159,11 @@ try:
         confidence = confidence_input / 100
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
 
-        st.write("Retornos Ajustados por Black-Litterman:")
-        st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        if len(bl_returns) != len(etfs):
+            st.error("El cálculo de Black-Litterman devolvió un tamaño inesperado. Revise las vistas o los datos.")
+        else:
+            st.write("Retornos Ajustados por Black-Litterman:")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
 except Exception as e:
     st.error(f"Error en Black-Litterman: {e}")
 
