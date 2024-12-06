@@ -49,7 +49,7 @@ def agregar_fondo_y_gif():
         position: absolute;
         top: 10px;
         right: 10px;
-        width: 150px;
+        width: 100px; /* Ajustamos el tamaño a un ancho más pequeño */
         z-index: 10;
     }
     </style>
@@ -175,108 +175,175 @@ else:
 
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
-    # ====== Visualización de Métricas ====== #
-    st.title("📊 Análisis del Portafolio")
+ # ====== Métricas del Portafolio ====== #
+st.title("📊 Análisis del Portafolio")
+col1, col2, col3 = st.columns(3)
+col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
+col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
+col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
+
+st.subheader("Estadísticas Detalladas")
+stats_table = pd.DataFrame({
+    "Rendimiento Anualizado": media,
+    "Volatilidad Anualizada": volatilidad,
+    "Sharpe Ratio": sharpe,
+    "Sortino Ratio": sortino,
+    "Drawdown": drawdown
+}).T
+st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
+
+st.subheader("📉 Análisis de Riesgo: VaR y CVaR")
+alpha = 0.95
+var_cvar = {}
+for etf in etfs:
+    var = rendimientos[etf].quantile(1 - alpha)
+    cvar = rendimientos[etf][rendimientos[etf] <= var].mean()
+    var_cvar[etf] = {"VaR (95%)": var, "CVaR (95%)": cvar}
+
+var_cvar_df = pd.DataFrame(var_cvar).T
+st.dataframe(var_cvar_df.style.format({"VaR (95%)": "{:.2%}", "CVaR (95%)": "{:.2%}"}))
+
+# ====== Distribución de Retornos ====== #
+st.subheader("Distribución de Retornos")
+
+# Crear un selector para elegir un ETF específico
+selected_etf = st.selectbox("Seleccione un ETF para visualizar su distribución de retornos:", etfs)
+
+# Gráfica de distribución de retornos para el ETF seleccionado
+fig_hist = go.Figure()
+fig_hist.add_trace(go.Histogram(
+    x=rendimientos[selected_etf],
+    nbinsx=50,
+    marker_color="goldenrod",  # Cambiamos el color a un dorado que combina con el diseño
+    opacity=0.85
+))
+fig_hist.update_layout(
+    title=f"Distribución de Retornos para {selected_etf}",
+    xaxis_title="Retorno",
+    yaxis_title="Frecuencia",
+    template="plotly_dark",
+    title_font=dict(size=20, color="gold"),  # Ajustamos el color del título a dorado
+    font=dict(size=14, color="white")  # Cambiamos el color del texto para mejor visibilidad
+)
+
+# Mostrar la gráfica seleccionada
+st.plotly_chart(fig_hist, use_container_width=True)
+
+# ====== Optimización del Portafolio ====== #
+st.header("🚀 Optimización del Portafolio")
+opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
+st.subheader("Pesos Óptimos del Portafolio")
+
+# Crear el gráfico con el color "goldenrod"
+fig_opt_weights = go.Figure()
+fig_opt_weights.add_trace(go.Bar(
+    x=etfs,
+    y=opt_weights,
+    marker_color="goldenrod",  # Color dorado uniforme con el gráfico de distribución de retornos
+    opacity=0.85
+))
+fig_opt_weights.update_layout(
+    title="Pesos Óptimos del Portafolio",
+    xaxis_title="Activos",
+    yaxis_title="Peso",
+    template="plotly_dark",
+    title_font=dict(size=20, color="gold"),  # Ajustamos el color del título a dorado
+    font=dict(size=14, color="white")  # Cambiamos el color del texto para mayor consistencia
+)
+
+# Mostrar el gráfico
+st.plotly_chart(fig_opt_weights, use_container_width=True)
+
+# ====== Modelo Black-Litterman ====== #
+st.header("🔮 Modelo Black-Litterman")
+market_weights = np.array([1 / len(etfs)] * len(etfs))
+views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo):", "0.03,0.04,0.05,0.02,0.01")
+confidence_input = st.slider("Confianza en las vistas (0-100):", 0, 100, 50)
+
+try:
+    views = np.array([float(v.strip()) for v in views_input.split(",")])
+    confidence = confidence_input / 100
+
+    if len(views) != len(etfs):
+        st.warning("El número de vistas no coincide con el número de activos. Verifica las entradas.")
+    else:
+        tau = 0.05
+        P = np.eye(len(etfs))
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
+
+        pi = np.dot(cov_matrix, market_weights)
+
+        # Cálculo de Black-Litterman
+        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
+        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ views)
+
+        # Mostrar resultados ajustados
+        st.subheader("📈 Retornos Ajustados por Black-Litterman")
+        adjusted_df = pd.DataFrame(BL_returns, index=etfs, columns=["Retorno Ajustado"])
+        st.dataframe(adjusted_df.style.format("{:.2%}").background_gradient(cmap="Greens"))
+except Exception as e:
+    st.error(f"Error en Black-Litterman: {e}")
+
+# ====== Backtesting ====== #
+st.header("📈 Backtesting")
+
+# Calcular rendimientos acumulados del portafolio y el benchmark
+try:
+    port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1)
+    port_cumulative_returns = (1 + port_returns).cumprod() - 1
+
+    benchmark_returns = rendimientos[benchmark_symbol]
+    benchmark_cumulative_returns = (1 + benchmark_returns).cumprod() - 1
+
+    # Mostrar métricas clave del backtesting
+    st.subheader("📊 Métricas del Backtesting")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
-    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
-    col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
+    col1.metric("Rendimiento Total del Portafolio", f"{port_cumulative_returns.iloc[-1]:.2%}")
+    col2.metric("Rendimiento Total del Benchmark", f"{benchmark_cumulative_returns.iloc[-1]:.2%}")
+    col3.metric("Diferencia de Rendimiento", f"{(port_cumulative_returns.iloc[-1] - benchmark_cumulative_returns.iloc[-1]):.2%}")
 
-    st.subheader("Estadísticas Detalladas")
-    stats_table = pd.DataFrame({
-        "Rendimiento Anualizado": media,
-        "Volatilidad Anualizada": volatilidad,
-        "Sharpe Ratio": sharpe,
-        "Sortino Ratio": sortino,
-        "Drawdown": drawdown
-    }).T
-    st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
-
-    # ====== Tabla de VaR y CVaR ====== #
-    st.subheader("📉 Análisis de Riesgo: VaR y CVaR")
-    alpha = 0.95
-    var_cvar = {}
-    for etf in etfs:
-        var = rendimientos[etf].quantile(1 - alpha)
-        cvar = rendimientos[etf][rendimientos[etf] <= var].mean()
-        var_cvar[etf] = {"VaR (95%)": var, "CVaR (95%)": cvar}
-
-    # Mostrar la tabla de VaR y CVaR
-    var_cvar_df = pd.DataFrame(var_cvar).T
-    st.dataframe(var_cvar_df.style.format({"VaR (95%)": "{:.2%}", "CVaR (95%)": "{:.2%}"}))
-
-    # ====== Distribución de Retornos ====== #
-    st.subheader("Distribución de Retornos")
-    for etf in etfs:
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color="blue", opacity=0.75))
-        fig_hist.update_layout(
-            title=f"Distribución de Retornos para {etf}",
-            xaxis_title="Retorno",
-            yaxis_title="Frecuencia",
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_hist)
-
-    # ====== Optimización del Portafolio ====== #
-    st.header("🚀 Optimización del Portafolio")
-    opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
-    st.subheader("Pesos Óptimos del Portafolio")
-    st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
-
-    # ====== Modelo Black-Litterman ====== #
-    st.header("🔮 Modelo Black-Litterman")
-    market_weights = np.array([1 / len(etfs)] * len(etfs))
-    views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo):", "0.03,0.04,0.05,0.02,0.01")
-    confidence_input = st.slider("Confianza en las vistas (0-100):", 0, 100, 50)
-
-    try:
-        views = [float(v.strip()) for v in views_input.split(",")]
-        confidence = confidence_input / 100
-
-        if len(views) != len(etfs):
-            st.warning("El número de vistas no coincide con el número de activos. Verifica las entradas.")
-        else:
-            bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-            if bl_returns:
-                st.write("Retornos ajustados por Black-Litterman:")
-                st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
-            else:
-                st.warning("No se pudo calcular Black-Litterman correctamente.")
-    except Exception as e:
-        st.error(f"Error: {e}")
-
-    # ====== Backtesting ====== #
-    st.header("📈 Backtesting")
-    port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
-    benchmark_returns = rendimientos[benchmark_symbol].cumsum()
-
+    # Visualización del rendimiento acumulado
+    st.subheader("📈 Rendimientos Acumulados: Portafolio vs Benchmark")
     fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio", line=dict(color="cyan")))
-    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
+    fig_bt.add_trace(go.Scatter(
+        x=port_cumulative_returns.index,
+        y=port_cumulative_returns,
+        name="Portafolio",
+        line=dict(color="cyan", width=3)
+    ))
+    fig_bt.add_trace(go.Scatter(
+        x=benchmark_cumulative_returns.index,
+        y=benchmark_cumulative_returns,
+        name=f"Benchmark ({benchmark})",
+        line=dict(color="orange", width=3)
+    ))
     fig_bt.update_layout(
-        title="Backtesting: Portafolio vs Benchmark",
+        title="Rendimientos Acumulados: Portafolio vs Benchmark",
         xaxis_title="Fecha",
         yaxis_title="Rendimiento Acumulado",
-        template="plotly_dark"
+        template="plotly_dark",
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
-    st.plotly_chart(fig_bt)
+    st.plotly_chart(fig_bt, use_container_width=True)
 
-    # ====== Leyenda ====== #
-    with st.expander("📘 Leyenda: Explicación de métricas y visualizaciones"):
-        st.write("""
-        ### Métricas y Visualizaciones
-        - **Rendimiento Promedio Anualizado:** Representa el rendimiento promedio que un activo o portafolio podría generar en un año.
-        - **Volatilidad Promedio Anualizada:** Mide el nivel de riesgo o variabilidad en los retornos anuales del activo o portafolio.
-        - **Sharpe Ratio:** Indica el rendimiento ajustado al riesgo, comparando el rendimiento con la volatilidad. Un valor más alto es mejor.
-        - **Sortino Ratio:** Similar al Sharpe Ratio, pero solo considera la volatilidad negativa (pérdidas).
-        - **Drawdown:** La caída máxima desde un pico hasta un valle en el valor del portafolio.
-        - **VaR (Valor en Riesgo):** Pérdida máxima esperada con un nivel de confianza del 95%.
-        - **CVaR (Valor en Riesgo Condicional):** Pérdida promedio esperada en el peor 5% de los casos.
-        - **Distribución de Retornos:** Histograma que muestra la frecuencia de los retornos observados para cada activo.
-        - **Optimización del Portafolio:** Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
-        - **Modelo Black-Litterman:** Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
-        - **Backtesting:** Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
+except Exception as e:
+    st.error(f"Error al calcular o mostrar el backtesting: {e}")
+
+# ====== Leyenda ====== #
+with st.expander("📘 Leyenda: Explicación de métricas y visualizaciones"):
+    st.write("""
+    ### Métricas y Visualizaciones
+        - *Rendimiento Promedio Anualizado:* Representa el rendimiento promedio que un activo o portafolio podría generar en un año.
+        - *Volatilidad Promedio Anualizada:* Mide el nivel de riesgo o variabilidad en los retornos anuales del activo o portafolio.
+        - *Sharpe Ratio:* Indica el rendimiento ajustado al riesgo, comparando el rendimiento con la volatilidad. Un valor más alto es mejor.
+        - *Sortino Ratio:* Similar al Sharpe Ratio, pero solo considera la volatilidad negativa (pérdidas).
+        - *Drawdown:* La caída máxima desde un pico hasta un valle en el valor del portafolio.
+        - *VaR (Valor en Riesgo):* Pérdida máxima esperada con un nivel de confianza del 95%.
+        - *CVaR (Valor en Riesgo Condicional):* Pérdida promedio esperada en el peor 5% de los casos.
+        - *Distribución de Retornos:* Histograma que muestra la frecuencia de los retornos observados para cada activo.
+        - *Optimización del Portafolio:* Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
+        - *Modelo Black-Litterman:* Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
+        - *Backtesting:* Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
         """)
 
 
