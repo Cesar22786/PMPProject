@@ -60,21 +60,6 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     return result.x, mean_returns, cov_matrix
 
 # Modelo Black-Litterman
-def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-    try:
-        tau = 0.05
-        pi = np.dot(cov_matrix, market_weights)
-
-        Q = np.array(views).reshape(-1, 1)
-        P = np.eye(len(market_weights))
-        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
-
-        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-        return BL_returns.flatten()
-    except Exception as e:
-        st.error(f"Error en el modelo Black-Litterman: {e}")
-        return []
 
 # ====== BLACK-LITTERMAN ====== #
 st.header("🔮 Modelo Black-Litterman")
