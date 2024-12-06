@@ -94,23 +94,6 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     result = minimize(port_metrics, weights, bounds=bounds, constraints=constraints)
     return result.x, mean_returns, cov_matrix
 
-# Modelo Black-Litterman
-def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-    try:
-        tau = 0.05
-        pi = np.dot(cov_matrix, market_weights)
-
-        Q = np.array(views).reshape(-1, 1)
-        P = np.eye(len(market_weights))
-        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
-
-        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-        return BL_returns.flatten()
-    except Exception as e:
-        st.error(f"Error en el modelo Black-Litterman: {e}")
-        return []
-
 # ====== INTERFAZ ====== #
 st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
@@ -129,12 +112,24 @@ benchmark_symbol = benchmarks_opciones[benchmark]
 start_date = st.sidebar.date_input("Fecha de inicio:", pd.to_datetime("2010-01-01"))
 end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 
-# Pesos iniciales
 weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
+
+# ====== BOTONES SUPERIORES ====== #
+with st.container():
+    col1, col2, col3 = st.columns([6, 1, 1])
+    with col2:
+        if st.button("Descargar Datos"):
+            if not data.empty:
+                guardar_datos_csv(data, "portafolio_datos.csv")
+            else:
+                st.warning("No hay datos disponibles para descargar.")
+    with col3:
+        if st.button("Reiniciar Parámetros"):
+            st.experimental_rerun()
 
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
@@ -206,4 +201,6 @@ else:
     fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
     fig_bt.update_layout(template="plotly_dark", title="Backtesting", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
     st.plotly_chart(fig_bt)
+
+
 
