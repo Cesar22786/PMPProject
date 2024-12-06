@@ -246,7 +246,7 @@ else:
     st.plotly_chart(fig_bt)
 
     # ====== Leyenda ====== #
-    with st.expander("📘 Leyenda: Explicación de métricas y visualizaciones"):
+    with st.expander("📘: Explicación de métricas y visualizaciones"):
         st.write("""
         ### Métricas y Visualizaciones
         - **Rendimiento Promedio Anualizado:** Representa el rendimiento promedio que un activo o portafolio podría generar en un año.
