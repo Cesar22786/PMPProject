@@ -79,7 +79,7 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
 # ====== INTERFAZ ====== #
 
 # Entrada de parámetros del usuario
-st.sidebar.header("Parámetros del Portafolio 📊")
+st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
 
@@ -99,8 +99,6 @@ end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
 
-# Descarga de datos
-st.sidebar.header("Opciones de Descarga 📥")
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
@@ -113,16 +111,13 @@ else:
 
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
-    # ====== ANÁLISIS ====== #
     st.title("📊 Análisis del Portafolio")
-    st.markdown("### Rendimiento y Riesgo 📈")
-
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rendimiento Anualizado", f"{media.mean():.2%}")
-    col2.metric("Volatilidad Promedio", f"{volatilidad.mean():.2%}")
+    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
+    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
     col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
-    st.markdown("### Estadísticas Detalladas 🧮")
+    st.subheader("Estadísticas Detalladas")
     stats_table = pd.DataFrame({
         "Rendimiento Anualizado": media,
         "Volatilidad Anualizada": volatilidad,
@@ -130,9 +125,9 @@ else:
         "Sortino Ratio": sortino,
         "Drawdown": drawdown
     }).T
-    st.dataframe(stats_table)
+    st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
 
-    st.markdown("### Distribución de Retornos 🎨")
+    st.subheader("Distribución de Retornos")
     for etf in etfs:
         fig_hist = go.Figure()
         fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color="blue", opacity=0.75))
@@ -144,16 +139,30 @@ else:
         )
         st.plotly_chart(fig_hist)
 
-    # ====== OPTIMIZACIÓN ====== #
-    st.title("🚀 Optimización del Portafolio")
+    st.header("🚀 Optimización del Portafolio")
     opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
-
-    st.markdown("### Pesos Óptimos 🏋️")
     st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
-    # ====== CONCLUSIONES ====== #
-    st.title("🎯 Conclusiones")
-    st.write("""
-        - Evalúa el rendimiento frente a benchmarks clave.
-        - Usa los gráficos interactivos para afinar tu estrategia.
-    """)
+    st.header("🔮 Modelo Black-Litterman")
+    market_weights = np.array([1 / len(etfs)] * len(etfs))
+    views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo):", "0.03,0.04,0.05,0.02,0.01")
+    confidence_input = st.slider("Confianza en las vistas (0-100):", 0, 100, 50)
+
+    try:
+        views = [float(v.strip()) for v in views_input.split(",")]
+        confidence = confidence_input / 100
+        bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
+        st.write("Retornos ajustados por Black-Litterman:")
+        st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+    st.header("📈 Backtesting")
+    port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
+    benchmark_returns = rendimientos[benchmark_symbol].cumsum()
+
+    fig_bt = go.Figure()
+    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio", line=dict(color="cyan")))
+    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
+    fig_bt.update_layout(template="plotly_dark", title="Backtesting", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
+    st.plotly_chart(fig_bt)
