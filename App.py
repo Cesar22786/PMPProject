@@ -55,28 +55,11 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     result = minimize(port_metrics, weights, bounds=bounds, constraints=constraints)
     return result.x, mean_returns, cov_matrix
 
-# Modelo Black-Litterman
-def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-    try:
-        tau = 0.05
-        pi = np.dot(cov_matrix, market_weights)
-
-        Q = np.array(views).reshape(-1, 1)
-        P = np.eye(len(market_weights))
-        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
-
-        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-        return BL_returns.flatten()
-    except Exception as e:
-        st.error(f"Error en el modelo Black-Litterman: {e}")
-        return []
-
 # ====== INTERFAZ ====== #
 
 # Entrada de parámetros del usuario
-st.sidebar.header("Parámetros del Portafolio")
-etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas (por ejemplo: AGG,EMB,VTI,EEM,GLD):", "AGG,EMB,VTI,EEM,GLD")
+st.sidebar.header("Parámetros del Portafolio 📊")
+etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
 
 benchmarks_opciones = {
@@ -96,10 +79,11 @@ weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
 
 # Descarga de datos
-st.sidebar.header("Opciones de Descarga")
+st.sidebar.header("Opciones de Descarga 📁")
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
+
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
 else:
@@ -109,13 +93,15 @@ else:
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
     # ====== ANÁLISIS ====== #
-    st.header("Análisis del Portafolio")
+    st.title("Análisis del Portafolio")
+    st.markdown("### Rendimiento y Riesgo 📈")
+
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
-    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
+    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}", delta=f"{(media.mean() - 0.05):.2%}")
+    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}", delta=f"{(volatilidad.mean() - 0.15):.2%}")
     col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
-    st.subheader("Estadísticas Detalladas")
+    st.markdown("### Estadísticas Detalladas 🔍")
     stats_table = pd.DataFrame({
         "Rendimiento Anualizado": media,
         "Volatilidad Anualizada": volatilidad,
@@ -123,91 +109,49 @@ else:
         "Sortino Ratio": sortino,
         "Drawdown": drawdown
     }).T
-    st.dataframe(stats_table)
+    st.dataframe(stats_table.style.highlight_max(axis=1))
 
-    st.subheader("Distribución de Retornos")
+    st.markdown("### Distribución de Retornos 📊")
     for etf in etfs:
         fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, name=f"{etf}"))
+        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color='blue', opacity=0.75))
         fig_hist.update_layout(
             title=f"Distribución de Retornos para {etf}",
             xaxis_title="Retorno",
-            yaxis_title="Frecuencia"
+            yaxis_title="Frecuencia",
+            template="plotly_dark"
         )
         st.plotly_chart(fig_hist)
 
     # ====== OPTIMIZACIÓN ====== #
-    st.header("Optimización del Portafolio")
+    st.title("Optimización del Portafolio 🧮")
     opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
 
-    st.subheader("Pesos Óptimos del Portafolio")
-    st.write(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
-
-    # ====== BLACK-LITTERMAN ====== #
-    # ====== BLACK-LITTERMAN ====== #
-st.header("Modelo Black-Litterman")
-
-# Proporciones del mercado (igual ponderación como ejemplo)
-market_weights = np.array([1 / len(etfs)] * len(etfs))
-
-# Entrada de vistas por parte del usuario
-views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
-
-# Convertir vistas a lista de floats
-try:
-    views = [float(v.strip()) for v in views_input.split(",")]
-except ValueError:
-    st.error("Error: Las vistas deben ser valores numéricos separados por comas.")
-    views = []
-
-# Verificar que el número de vistas coincida con el número de activos
-if len(views) != len(etfs):
-    st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
-else:
-    try:
-        # Modelo Black-Litterman
-        def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-            try:
-                tau = 0.05
-                pi = np.dot(cov_matrix, market_weights)
-
-                Q = np.array(views).reshape(-1, 1)
-                
-                # Validación de dimensiones
-                if Q.shape[0] != market_weights.shape[0]:
-                    raise ValueError("El número de vistas no coincide con el número de activos.")
-
-                P = np.eye(len(market_weights))
-                omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
-
-                M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-                BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-                return BL_returns.flatten()
-            except Exception as e:
-                st.error(f"Error en el modelo Black-Litterman: {e}")
-                return []
-
-        # Calcular retornos ajustados por Black-Litterman
-        confidence = confidence_input / 100
-        bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-
-        if bl_returns:
-            st.write("Rendimientos Ajustados por Black-Litterman:")
-            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
-    except Exception as e:
-        st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
+    st.markdown("### Pesos Óptimos 🏋️")
+    st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
     # ====== BACKTESTING ====== #
-    st.header("Backtesting")
+    st.title("Backtesting 🚀")
     port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
     benchmark_returns = rendimientos[benchmark_symbol].cumsum()
 
     fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio"))
-    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark"))
-    fig_bt.update_layout(title="Backtesting: Portafolio vs Benchmark", xaxis_title="Fecha", yaxis_title="Rendimientos Acumulados")
+    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio", line=dict(color="green")))
+    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
+    fig_bt.update_layout(
+        title="Backtesting: Portafolio vs Benchmark",
+        xaxis_title="Fecha",
+        yaxis_title="Rendimientos Acumulados",
+        template="plotly_white"
+    )
     st.plotly_chart(fig_bt)
 
+    # ====== CONCLUSIONES ====== #
+    st.title("Conclusión 🎯")
+    st.markdown("""
+        - El análisis muestra las métricas clave para comparar el portafolio frente al benchmark.
+        - Usa los gráficos interactivos para profundizar en los retornos históricos y optimización.
+        - Exporta los datos usando la opción de descarga lateral.
+    """)
  
    
