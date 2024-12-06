@@ -7,7 +7,11 @@ import plotly.graph_objects as go
 from scipy.optimize import minimize
 
 # Configuración de la página
-st.set_page_config(page_title="Análisis Avanzado de Portafolios", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Análisis Avanzado de Portafolios",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # ====== FUNCIONES PRINCIPALES ====== #
 
@@ -55,6 +59,23 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
     result = minimize(port_metrics, weights, bounds=bounds, constraints=constraints)
     return result.x, mean_returns, cov_matrix
 
+# Modelo Black-Litterman
+def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
+    try:
+        tau = 0.05
+        pi = np.dot(cov_matrix, market_weights)
+
+        Q = np.array(views).reshape(-1, 1)
+        P = np.eye(len(market_weights))
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
+
+        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
+        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
+        return BL_returns.flatten()
+    except Exception as e:
+        st.error(f"Error en el modelo Black-Litterman: {e}")
+        return []
+
 # ====== INTERFAZ ====== #
 
 # Entrada de parámetros del usuario
@@ -79,7 +100,7 @@ weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
 
 # Descarga de datos
-st.sidebar.header("Opciones de Descarga 📁")
+st.sidebar.header("Opciones de Descarga 📥")
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
@@ -93,15 +114,15 @@ else:
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
     # ====== ANÁLISIS ====== #
-    st.title("Análisis del Portafolio")
+    st.title("📊 Análisis del Portafolio")
     st.markdown("### Rendimiento y Riesgo 📈")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}", delta=f"{(media.mean() - 0.05):.2%}")
-    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}", delta=f"{(volatilidad.mean() - 0.15):.2%}")
+    col1.metric("Rendimiento Anualizado", f"{media.mean():.2%}")
+    col2.metric("Volatilidad Promedio", f"{volatilidad.mean():.2%}")
     col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
-    st.markdown("### Estadísticas Detalladas 🔍")
+    st.markdown("### Estadísticas Detalladas 🧮")
     stats_table = pd.DataFrame({
         "Rendimiento Anualizado": media,
         "Volatilidad Anualizada": volatilidad,
@@ -109,12 +130,12 @@ else:
         "Sortino Ratio": sortino,
         "Drawdown": drawdown
     }).T
-    st.dataframe(stats_table.style.highlight_max(axis=1))
+    st.dataframe(stats_table)
 
-    st.markdown("### Distribución de Retornos 📊")
+    st.markdown("### Distribución de Retornos 🎨")
     for etf in etfs:
         fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color='blue', opacity=0.75))
+        fig_hist.add_trace(go.Histogram(x=rendimientos[etf], nbinsx=50, marker_color="blue", opacity=0.75))
         fig_hist.update_layout(
             title=f"Distribución de Retornos para {etf}",
             xaxis_title="Retorno",
@@ -124,34 +145,15 @@ else:
         st.plotly_chart(fig_hist)
 
     # ====== OPTIMIZACIÓN ====== #
-    st.title("Optimización del Portafolio 🧮")
+    st.title("🚀 Optimización del Portafolio")
     opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
 
     st.markdown("### Pesos Óptimos 🏋️")
     st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
-    # ====== BACKTESTING ====== #
-    st.title("Backtesting 🚀")
-    port_returns = (rendimientos[etfs] * opt_weights).sum(axis=1).cumsum()
-    benchmark_returns = rendimientos[benchmark_symbol].cumsum()
-
-    fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio", line=dict(color="green")))
-    fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
-    fig_bt.update_layout(
-        title="Backtesting: Portafolio vs Benchmark",
-        xaxis_title="Fecha",
-        yaxis_title="Rendimientos Acumulados",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_bt)
-
     # ====== CONCLUSIONES ====== #
-    st.title("Conclusión 🎯")
-    st.markdown("""
-        - El análisis muestra las métricas clave para comparar el portafolio frente al benchmark.
-        - Usa los gráficos interactivos para profundizar en los retornos históricos y optimización.
-        - Exporta los datos usando la opción de descarga lateral.
+    st.title("🎯 Conclusiones")
+    st.write("""
+        - Evalúa el rendimiento frente a benchmarks clave.
+        - Usa los gráficos interactivos para afinar tu estrategia.
     """)
- 
-   
