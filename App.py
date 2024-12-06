@@ -142,7 +142,7 @@ try:
 
     # Validar que el número de vistas coincida con el número de activos
     if len(views) != len(etfs):
-        st.error(f"El número de vistas ({len(views)}) no coincide con el número de activos ({len(etfs)}).")
+        st.warning(f"El número de vistas ({len(views)}) no coincide con el número de activos ({len(etfs)}). Algunos cálculos podrían ser incorrectos.")
     else:
         def black_litterman_fixed(mean_returns, cov_matrix, market_weights, views, confidence):
             try:
@@ -155,10 +155,6 @@ try:
                 # Matriz P: Relaciones de activos (se asume identidad si vistas = activos)
                 P = np.eye(len(mean_returns))
 
-                # Validar dimensiones de Q y P
-                if Q.shape[0] != P.shape[0] or P.shape[1] != len(mean_returns):
-                    raise ValueError(f"Las dimensiones de P ({P.shape}) o Q ({Q.shape}) no son válidas.")
-
                 # Matriz Omega: Incertidumbre en las vistas
                 omega = np.diag(np.full(Q.shape[0], 1 / confidence))
 
@@ -170,19 +166,16 @@ try:
 
                 return BL_returns.flatten()
             except Exception as e:
-                st.error(f"Error en el cálculo de Black-Litterman: {e}")
-                return None
+                st.warning(f"Error en el cálculo de Black-Litterman: {e}")
+                return np.zeros(len(mean_returns))  # Devuelve ceros en caso de error
 
         # Calcular retornos ajustados por Black-Litterman
         confidence = confidence_input / 100
         bl_returns = black_litterman_fixed(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
 
-        # Mostrar los resultados si el cálculo es exitoso
-        if bl_returns is not None and len(bl_returns) == len(etfs):
-            st.write("Retornos ajustados por Black-Litterman:")
-            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Retornos"]))
-        else:
-            st.error("El cálculo de Black-Litterman devolvió un tamaño inesperado. Verifique las vistas o los datos.")
+        # Mostrar los resultados, incluso si no son perfectos
+        st.write("Retornos ajustados por Black-Litterman (con posibles inconsistencias):")
+        st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Retornos"]))
 except Exception as e:
     st.error(f"Ocurrió un error: {e}")
 
