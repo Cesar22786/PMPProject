@@ -13,8 +13,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====== ESTILOS ====== #
-def agregar_fondo():
+# ====== ESTILOS Y GIF ====== #
+def agregar_fondo_y_gif():
+    # Fondo y estilos
     fondo_html = """
     <style>
     body {
@@ -44,11 +45,22 @@ def agregar_fondo():
         color: #ffffff !important;
         background-color: #333333;
     }
+    .gif-container {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 150px;
+        z-index: 10;
+    }
     </style>
+    <div class="gif-container">
+        <img src="https://art.pixilart.com/8ebf216d8b6c2f3.gif" alt="GIF" style="width:100%;border-radius:10px;box-shadow:0px 4px 10px rgba(0,0,0,0.5);">
+    </div>
     """
     st.markdown(fondo_html, unsafe_allow_html=True)
 
-agregar_fondo()
+# Llamar a la función para agregar el fondo y el GIF
+agregar_fondo_y_gif()
 
 # Guardar datos en CSV
 def guardar_datos_csv(data, filename):
@@ -126,7 +138,7 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
         st.error(f"Error en el modelo Black-Litterman: {e}")
         return []
 
-# Análisis del portafolio
+# ====== Entrada de Parámetros del Usuario ====== #
 st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
@@ -149,7 +161,7 @@ weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input 
 
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
-# Descarga y cálculos
+# ====== Descarga de Datos ====== #
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
@@ -159,6 +171,7 @@ else:
 
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
+    # ====== Visualización de Métricas ====== #
     st.title("📊 Análisis del Portafolio")
     col1, col2, col3 = st.columns(3)
     col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
@@ -173,8 +186,7 @@ else:
         "Sortino Ratio": sortino,
         "Drawdown": drawdown
     }).T
-    st.dataframe(stats_table)
-
+    st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
 
     # ====== Distribución de Retornos ====== #
     st.subheader("Distribución de Retornos")
@@ -246,12 +258,10 @@ else:
         - **Optimización del Portafolio:** Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
         - **Modelo Black-Litterman:** Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
         - **Backtesting:** Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
-
-        ### Botones
-        - **Descargar Datos:** Guarda los datos descargados en formato CSV para análisis posterior.
-        - **Reiniciar Parámetros:** Restablece los parámetros de entrada a sus valores iniciales.
         """)
 
-   
+ 
+
+
 
 
