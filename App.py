@@ -130,7 +130,7 @@ else:
 # ====== BLACK-LITTERMAN ====== #
 st.header("🔮 Modelo Black-Litterman")
 
-# Definir proporciones de mercado (ejemplo: igual ponderación)
+# Proporciones del mercado (igual ponderación como ejemplo)
 market_weights = np.array([1 / len(etfs)] * len(etfs))
 
 # Entrada de vistas por parte del usuario
@@ -151,24 +151,28 @@ try:
                 pi = np.dot(cov_matrix, market_weights)  # Retornos implícitos del mercado
 
                 # Crear las matrices Q (vistas) y P (relaciones entre activos)
-                Q = np.array(views).reshape(-1, 1)
-                P = np.eye(len(market_weights))  # Relación uno a uno
+                Q = np.array(views).reshape(-1, 1)  # Dimensiones: (n_activos, 1)
+                P = np.eye(len(market_weights))  # Relación directa uno a uno
 
                 # Validación de dimensiones
-                if Q.shape[0] != len(market_weights):
-                    raise ValueError("El número de vistas no coincide con el número de activos.")
+                if Q.shape[0] != P.shape[0] or Q.shape[0] != len(market_weights):
+                    raise ValueError(
+                        f"Dimensiones no coinciden: Q tiene {Q.shape[0]}, pero se esperaban {len(market_weights)}."
+                    )
 
                 # Matriz omega (incertidumbre en las vistas)
-                omega = np.diag(np.full(len(views), 1 / confidence))
+                omega = np.diag(np.full(len(views), 1 / confidence))  # Dimensiones: (n_activos, n_activos)
 
                 # Inversa de la matriz combinada
                 M_inverse = np.linalg.inv(
                     np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P))
                 )
+
+                # Calcular los retornos ajustados
                 BL_returns = M_inverse @ (
                     np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q
                 )
-                return BL_returns.flatten()
+                return BL_returns.flatten()  # Retornar como un vector unidimensional
             except Exception as e:
                 st.error(f"Error en el cálculo de Black-Litterman: {e}")
                 return []
@@ -177,6 +181,7 @@ try:
         confidence = confidence_input / 100
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
 
+        # Validar el resultado antes de mostrarlo
         if len(bl_returns) != len(etfs):
             st.error("El cálculo de Black-Litterman devolvió un tamaño inesperado. Revise las vistas o los datos.")
         else:
