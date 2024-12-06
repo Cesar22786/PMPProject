@@ -252,6 +252,6 @@ else:
         - **Reiniciar Parámetros:** Restablece los parámetros de entrada a sus valores iniciales.
         """)
 
-    st.write("¡Gracias por utilizar esta herramienta! Si tienes comentarios o preguntas, no dudes en compartirlos.")
+   
 
 
