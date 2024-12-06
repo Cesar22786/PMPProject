@@ -111,6 +111,7 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
     except Exception as e:
         st.error(f"Error en el modelo Black-Litterman: {e}")
         return []
+
 # ====== INTERFAZ ====== #
 st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
@@ -158,9 +159,9 @@ else:
 
     st.title("📊 Análisis del Portafolio")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rendimiento Promedio", f"{media.mean():.2%}")
-    col2.metric("Volatilidad Promedio", f"{volatilidad.mean():.2%}")
-    col3.metric("Sharpe Ratio", f"{sharpe.mean():.2f}")
+    col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
+    col2.metric("Volatilidad Promedio Anualizada", f"{volatilidad.mean():.2%}")
+    col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
     st.subheader("Estadísticas Detalladas")
     stats_table = pd.DataFrame({
@@ -204,8 +205,11 @@ else:
         views = [float(v.strip()) for v in views_input.split(",")]
         confidence = confidence_input / 100
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-        st.write("Retornos ajustados por Black-Litterman:")
-        st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        if len(bl_returns) == len(etfs):
+            st.write("Retornos ajustados por Black-Litterman:")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        else:
+            st.warning("El cálculo de Black-Litterman devolvió un tamaño inesperado. Verifique las vistas o los datos.")
     except Exception as e:
         st.error(f"Error: {e}")
 
@@ -216,7 +220,12 @@ else:
     fig_bt = go.Figure()
     fig_bt.add_trace(go.Scatter(x=port_returns.index, y=port_returns, name="Portafolio", line=dict(color="cyan")))
     fig_bt.add_trace(go.Scatter(x=benchmark_returns.index, y=benchmark_returns, name="Benchmark", line=dict(color="orange")))
-    fig_bt.update_layout(template="plotly_dark", title="Backtesting", xaxis_title="Fecha", yaxis_title="Rendimiento Acumulado")
+    fig_bt.update_layout(
+        template="plotly_dark",
+        title="Backtesting: Portafolio vs Benchmark",
+        xaxis_title="Fecha",
+        yaxis_title="Rendimiento Acumulado"
+    )
     st.plotly_chart(fig_bt)
 
 
