@@ -144,23 +144,26 @@ else:
     st.write(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
 
     # ====== BLACK-LITTERMAN ====== #
-    st.header("Modelo Black-Litterman")
-    market_weights = np.array([1 / len(etfs)] * len(etfs))
-    views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
-    confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
+    def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
+    try:
+        tau = 0.05
+        pi = np.dot(cov_matrix, market_weights)
 
-    views = [float(v.strip()) for v in views_input.split(",")]
+        Q = np.array(views).reshape(-1, 1)
+        
+        # Validar que las dimensiones coincidan
+        if Q.shape[0] != market_weights.shape[0]:
+            raise ValueError("El número de vistas no coincide con el número de activos.")
 
-    if len(views) != len(etfs):
-        st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
-    else:
-        try:
-            confidence = confidence_input / 100
-            bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-            st.write("Rendimientos Ajustados por Black-Litterman:")
-            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
-        except Exception as e:
-            st.error(f"Error en el modelo Black-Litterman: {e}")
+        P = np.eye(len(market_weights))
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
+
+        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
+        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
+        return BL_returns.flatten()
+    except Exception as e:
+        st.error(f"Error en el modelo Black-Litterman: {e}")
+        return []
 
     # ====== BACKTESTING ====== #
     st.header("Backtesting")
