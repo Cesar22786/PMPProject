@@ -228,4 +228,23 @@ else:
     )
     st.plotly_chart(fig_bt)
 
+# ====== LEYENDA ====== #
+with st.expander("📘 Leyenda: Explicación de métricas y visualizaciones"):
+    st.write("""
+    ### Métricas y Visualizaciones
+    - **Rendimiento Promedio Anualizado:** Representa el rendimiento promedio que un activo o portafolio podría generar en un año.
+    - **Volatilidad Promedio Anualizada:** Mide el nivel de riesgo o variabilidad en los retornos anuales del activo o portafolio.
+    - **Sharpe Ratio:** Indica el rendimiento ajustado al riesgo, comparando el rendimiento con la volatilidad. Un valor más alto es mejor.
+    - **Sortino Ratio:** Similar al Sharpe Ratio, pero solo considera la volatilidad negativa (pérdidas).
+    - **Drawdown:** La caída máxima desde un pico hasta un valle en el valor del portafolio.
+    - **Distribución de Retornos:** Histograma que muestra la frecuencia de los retornos observados para cada activo.
+    - **Optimización del Portafolio:** Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
+    - **Modelo Black-Litterman:** Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
+    - **Backtesting:** Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
 
+    ### Botones
+    - **Descargar Datos:** Guarda los datos descargados en formato CSV para análisis posterior.
+    - **Reiniciar Parámetros:** Restablece los parámetros de entrada a sus valores iniciales.
+    """)
+
+st.write("¡Gracias por utilizar esta herramienta! Si tienes comentarios o preguntas, no dudes en compartirlos.")
