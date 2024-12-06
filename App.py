@@ -130,42 +130,60 @@ else:
 # ====== BLACK-LITTERMAN ====== #
 st.header("🔮 Modelo Black-Litterman")
 
+# Definir proporciones de mercado (ejemplo: igual ponderación)
 market_weights = np.array([1 / len(etfs)] * len(etfs))
+
+# Entrada de vistas por parte del usuario
 views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
 confidence_input = st.slider("Confianza en las vistas (0-100):", 0, 100, 50)
 
 try:
+    # Convertir las vistas a una lista de floats
     views = [float(v.strip()) for v in views_input.split(",")]
+
+    # Validar que el número de vistas coincida con el número de activos
     if len(views) != len(etfs):
         st.error("El número de vistas no coincide con el número de activos.")
     else:
         def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
-            tau = 0.05
-            pi = np.dot(cov_matrix, market_weights)
-            Q = np.array(views).reshape(-1, 1)
+            try:
+                tau = 0.05  # Escala de incertidumbre del mercado
+                pi = np.dot(cov_matrix, market_weights)  # Retornos implícitos del mercado
 
-            # Validación de dimensiones
-            if Q.shape[0] != len(market_weights):
-                raise ValueError("El número de vistas no coincide con el número de activos.")
+                # Crear las matrices Q (vistas) y P (relaciones entre activos)
+                Q = np.array(views).reshape(-1, 1)
+                P = np.eye(len(market_weights))  # Relación uno a uno
 
-            P = np.eye(len(market_weights))
-            omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
-            
-            # Inversa de la matriz combinada
-            M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
-            BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-            return BL_returns.flatten()
+                # Validación de dimensiones
+                if Q.shape[0] != len(market_weights):
+                    raise ValueError("El número de vistas no coincide con el número de activos.")
 
+                # Matriz omega (incertidumbre en las vistas)
+                omega = np.diag(np.full(len(views), 1 / confidence))
+
+                # Inversa de la matriz combinada
+                M_inverse = np.linalg.inv(
+                    np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P))
+                )
+                BL_returns = M_inverse @ (
+                    np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q
+                )
+                return BL_returns.flatten()
+            except Exception as e:
+                st.error(f"Error en el cálculo de Black-Litterman: {e}")
+                return []
+
+        # Calcular retornos ajustados por Black-Litterman
         confidence = confidence_input / 100
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
 
         if len(bl_returns) != len(etfs):
             st.error("El cálculo de Black-Litterman devolvió un tamaño inesperado. Revise las vistas o los datos.")
         else:
-            st.write("Retornos Ajustados por Black-Litterman:")
-            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+            st.write("**Retornos Ajustados por Black-Litterman:**")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos Ajustados"]))
 except Exception as e:
-    st.error(f"Error en Black-Litterman: {e}")
+    st.error(f"Error general en Black-Litterman: {e}")
 
 # ====== BACKTESTING ====== #
 st.header("🔄 Backtesting")
