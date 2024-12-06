@@ -71,10 +71,12 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
 
         M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
         BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
+        if BL_returns.shape[0] != len(market_weights):
+            raise ValueError("Dimensiones incorrectas en el cálculo de Black-Litterman.")
         return BL_returns.flatten()
     except Exception as e:
         st.error(f"Error en el modelo Black-Litterman: {e}")
-        return []
+        return None
 
 # ====== INTERFAZ ====== #
 
@@ -152,8 +154,9 @@ else:
         views = [float(v.strip()) for v in views_input.split(",")]
         confidence = confidence_input / 100
         bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
-        st.write("Retornos ajustados por Black-Litterman:")
-        st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        if bl_returns is not None:
+            st.write("Retornos ajustados por Black-Litterman:")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
     except Exception as e:
         st.error(f"Error: {e}")
 
