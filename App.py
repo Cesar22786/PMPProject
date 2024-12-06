@@ -174,6 +174,24 @@ else:
         )
         st.plotly_chart(fig_hist)
 
+    # Modelo Black-Litterman
+def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
+    try:
+        tau = 0.05  # Parámetro de escala
+        pi = np.dot(cov_matrix, market_weights)  # Retornos implícitos del mercado
+
+        Q = np.array(views).reshape(-1, 1)  # Vistas expresadas como matriz columna
+        P = np.eye(len(market_weights))  # Matriz identidad (1 vista por activo)
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)  # Matriz de incertidumbre
+
+        # Cálculo de los retornos ajustados por Black-Litterman
+        M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
+        BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
+        return BL_returns.flatten()  # Retornar como arreglo unidimensional
+    except Exception as e:
+        st.error(f"Error en el modelo Black-Litterman: {e}")
+        return []
+
     st.header("🚀 Optimización del Portafolio")
     opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
     st.bar_chart(pd.DataFrame(opt_weights, index=etfs, columns=["Pesos Óptimos"]))
