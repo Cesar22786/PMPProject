@@ -76,6 +76,41 @@ def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence)
         st.error(f"Error en el modelo Black-Litterman: {e}")
         return []
 
+# ====== BLACK-LITTERMAN ====== #
+st.header("🔮 Modelo Black-Litterman")
+
+# Proporciones del mercado (igual ponderación como ejemplo)
+market_weights = np.array([1 / len(etfs)] * len(etfs))
+
+# Entrada de vistas por parte del usuario
+views_input = st.text_input("Ingrese las vistas (rendimientos esperados por activo) separados por comas:", "0.03,0.04,0.05,0.02,0.01")
+confidence_input = st.slider("Nivel de Confianza en las Vistas (0-100):", 0, 100, 50)
+
+# Convertir vistas a lista de floats
+try:
+    views = [float(v.strip()) for v in views_input.split(",")]
+except ValueError:
+    st.error("Error: Las vistas deben ser valores numéricos separados por comas.")
+    views = []
+
+# Verificar que el número de vistas coincida con el número de activos
+if len(views) != len(etfs):
+    st.error(f"El número de vistas ingresadas ({len(views)}) no coincide con el número de activos seleccionados ({len(etfs)}).")
+else:
+    try:
+        # Validación de dimensiones antes de ejecutar el modelo
+        confidence = confidence_input / 100
+        bl_returns = black_litterman(mean_returns[etfs], cov_matrix, market_weights, views, confidence)
+
+        # Asegurar que las dimensiones coincidan
+        if len(bl_returns) == len(etfs):
+            st.write("Retornos Ajustados por Black-Litterman:")
+            st.dataframe(pd.DataFrame(bl_returns, index=etfs, columns=["Rendimientos"]))
+        else:
+            st.error("El cálculo de Black-Litterman devolvió un número inesperado de retornos. Verifique los parámetros.")
+    except Exception as e:
+        st.error(f"Ocurrió un error durante el cálculo del modelo Black-Litterman: {e}")
+
 # ====== INTERFAZ ====== #
 
 # Entrada de parámetros del usuario
