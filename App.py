@@ -18,18 +18,18 @@ def agregar_fondo():
     fondo_html = """
     <style>
     body {
-        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+        background: linear-gradient(to right, #000000, #800000);
         color: #ffffff;
         font-family: 'Arial', sans-serif;
     }
     .stApp {
-        background: linear-gradient(to bottom, #0f2027, #2c5364);
+        background: linear-gradient(to bottom, #000000, #800000);
     }
     .stSidebar {
-        background: linear-gradient(to bottom, #203a43, #2c5364);
+        background: linear-gradient(to bottom, #400000, #800000);
     }
     .metric-container .metric {
-        background: #2c5364;
+        background: #400000;
         border-radius: 8px;
         padding: 16px;
         box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
@@ -37,13 +37,18 @@ def agregar_fondo():
     .stMarkdown h1, h2, h3 {
         color: #FFD700;
     }
+    .css-1q8dd3e p {
+        color: #ffcccc !important;
+    }
+    .dataframe {
+        color: #ffffff !important;
+        background-color: #333333;
+    }
     </style>
     """
     st.markdown(fondo_html, unsafe_allow_html=True)
 
 agregar_fondo()
-
-# ====== FUNCIONES PRINCIPALES ====== #
 
 # Guardar datos en CSV
 def guardar_datos_csv(data, filename):
@@ -128,6 +133,7 @@ end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
+
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 
 if data.empty:
