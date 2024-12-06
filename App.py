@@ -45,12 +45,17 @@ def agregar_fondo_y_gif():
         color: #ffffff !important;
         background-color: #333333;
     }
-    .gif-container-right {
-        float: right;
-        margin-left: 20px;
+    .gif-container {
+        position: absolute;
+        top: 10px;
+        right: 10px;
         width: 150px;
+        z-index: 10;
     }
     </style>
+    <div class="gif-container">
+        <img src="https://art.pixilart.com/8ebf216d8b6c2f3.gif" alt="GIF" style="width:100%;border-radius:10px;box-shadow:0px 4px 10px rgba(0,0,0,0.5);">
+    </div>
     """
     st.markdown(fondo_html, unsafe_allow_html=True)
 
@@ -104,31 +109,40 @@ def optimizar_portafolio(rendimientos, weights, tasa_libre_riesgo=0.02):
 # Modelo Black-Litterman
 def black_litterman(mean_returns, cov_matrix, market_weights, views, confidence):
     try:
-        tau = 0.05
-        pi = np.dot(cov_matrix, market_weights)
+        tau = 0.05  # Parámetro de escala
+        pi = np.dot(cov_matrix, market_weights)  # Retornos implícitos del mercado
 
+        # Validación de vistas
         if len(views) != len(market_weights):
             raise ValueError("El número de vistas no coincide con el número de activos seleccionados.")
 
-        Q = np.array(views).reshape(-1, 1)
-        P = np.eye(len(market_weights))
+        Q = np.array(views).reshape(-1, 1)  # Vistas expresadas como matriz columna
+        P = np.eye(len(market_weights))  # Matriz identidad (1 vista por activo)
 
-        if P.shape[0] != Q.shape[0]:
-            raise ValueError("Las dimensiones de la matriz P y las vistas Q no coinciden.")
+        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)  # Matriz de incertidumbre
 
-        omega = np.diag(np.diag(np.dot(P, np.dot(tau * cov_matrix, P.T))) / confidence)
         M_inverse = np.linalg.inv(np.linalg.inv(tau * cov_matrix) + np.dot(P.T, np.dot(np.linalg.inv(omega), P)))
         BL_returns = M_inverse @ (np.linalg.inv(tau * cov_matrix) @ pi + P.T @ np.linalg.inv(omega) @ Q)
-
-        if BL_returns.shape[0] != len(market_weights):
-            raise ValueError("El cálculo de Black-Litterman devolvió un tamaño inesperado.")
         return BL_returns.flatten()
 
     except Exception as e:
         st.error(f"Error en el modelo Black-Litterman: {e}")
         return []
 
-# Entrada de Parámetros
+# Agregar la tabla con VaR y CVaR
+    st.subheader("📉 Análisis de Riesgo: VaR y CVaR")
+    alpha = 0.95
+    var_cvar = {}
+    for etf in etfs:
+        var = rendimientos[etf].quantile(1 - alpha)
+        cvar = rendimientos[etf][rendimientos[etf] <= var].mean()
+        var_cvar[etf] = {"VaR (95%)": var, "CVaR (95%)": cvar}
+
+    # Mostrar la tabla de VaR y CVaR
+    var_cvar_df = pd.DataFrame(var_cvar).T
+    st.dataframe(var_cvar_df.style.format({"VaR (95%)": "{:.2%}", "CVaR (95%)": "{:.2%}"}))
+
+# ====== Entrada de Parámetros del Usuario ====== #
 st.sidebar.header("Parámetros del Portafolio")
 etfs_input = st.sidebar.text_input("Ingrese los ETFs separados por comas:", "AGG,EMB,VTI,EEM,GLD")
 etfs = [etf.strip() for etf in etfs_input.split(',')]
@@ -151,9 +165,8 @@ weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input 
 
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 
-# Descarga de Datos
+# ====== Descarga de Datos ====== #
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
-
 if data.empty:
     st.error("No se pudieron descargar los datos. Verifique las fechas o los símbolos ingresados.")
 else:
@@ -162,6 +175,7 @@ else:
 
     rendimientos, media, volatilidad, sharpe, sortino, drawdown = calcular_metricas(data)
 
+    # ====== Visualización de Métricas ====== #
     st.title("📊 Análisis del Portafolio")
     col1, col2, col3 = st.columns(3)
     col1.metric("Rendimiento Promedio Anualizado", f"{media.mean():.2%}")
@@ -169,26 +183,27 @@ else:
     col3.metric("Sharpe Ratio Promedio", f"{sharpe.mean():.2f}")
 
     st.subheader("Estadísticas Detalladas")
-    col_table, col_gif = st.columns([3, 1])
+    stats_table = pd.DataFrame({
+        "Rendimiento Anualizado": media,
+        "Volatilidad Anualizada": volatilidad,
+        "Sharpe Ratio": sharpe,
+        "Sortino Ratio": sortino,
+        "Drawdown": drawdown
+    }).T
+    st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
 
-    with col_table:
-        stats_table = pd.DataFrame({
-            "Rendimiento Anualizado": media,
-            "Volatilidad Anualizada": volatilidad,
-            "Sharpe Ratio": sharpe,
-            "Sortino Ratio": sortino,
-            "Drawdown": drawdown
-        }).T
-        st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
+    # ====== Tabla de VaR y CVaR ====== #
+    st.subheader("📉 Análisis de Riesgo: VaR y CVaR")
+    alpha = 0.95
+    var_cvar = {}
+    for etf in etfs:
+        var = rendimientos[etf].quantile(1 - alpha)
+        cvar = rendimientos[etf][rendimientos[etf] <= var].mean()
+        var_cvar[etf] = {"VaR (95%)": var, "CVaR (95%)": cvar}
 
-    with col_gif:
-        gif_html = f"""
-        <div class="gif-container-right">
-            <img src="https://i.gifer.com/1z4b.gif" alt="GIF" style="width:100%;border-radius:10px;box-shadow:0px 4px 10px rgba(0,0,0,0.5);">
-        </div>
-        """
-        st.markdown(gif_html, unsafe_allow_html=True)
-
+    # Mostrar la tabla de VaR y CVaR
+    var_cvar_df = pd.DataFrame(var_cvar).T
+    st.dataframe(var_cvar_df.style.format({"VaR (95%)": "{:.2%}", "CVaR (95%)": "{:.2%}"}))
 
     # ====== Distribución de Retornos ====== #
     st.subheader("Distribución de Retornos")
@@ -247,22 +262,6 @@ else:
     )
     st.plotly_chart(fig_bt)
 
-    # ====== Análisis de Riesgo: VaR y CVaR ====== #
-    st.subheader("📉 Análisis de Riesgo: VaR y CVaR")
-
-    def calcular_var_cvar(data, nivel_confianza=0.95):
-        var = data.quantile(1 - nivel_confianza)
-        cvar = data[data <= var].mean()
-        return var, cvar
-
-    riesgo_table = {}
-    for etf in etfs:
-        var, cvar = calcular_var_cvar(rendimientos[etf])
-        riesgo_table[etf] = {"VaR (95%)": var, "CVaR (95%)": cvar}
-
-    riesgo_df = pd.DataFrame(riesgo_table).T
-    st.dataframe(riesgo_df.style.highlight_min(axis=0, color="lightcoral").highlight_max(axis=0, color="lightgreen"))
-
     # ====== Leyenda ====== #
     with st.expander("📘 Leyenda: Explicación de métricas y visualizaciones"):
         st.write("""
@@ -272,13 +271,21 @@ else:
         - **Sharpe Ratio:** Indica el rendimiento ajustado al riesgo, comparando el rendimiento con la volatilidad. Un valor más alto es mejor.
         - **Sortino Ratio:** Similar al Sharpe Ratio, pero solo considera la volatilidad negativa (pérdidas).
         - **Drawdown:** La caída máxima desde un pico hasta un valle en el valor del portafolio.
+        - **VaR (Valor en Riesgo):** Pérdida máxima esperada con un nivel de confianza del 95%.
+        - **CVaR (Valor en Riesgo Condicional):** Pérdida promedio esperada en el peor 5% de los casos.
         - **Distribución de Retornos:** Histograma que muestra la frecuencia de los retornos observados para cada activo.
         - **Optimización del Portafolio:** Cálculo de los pesos óptimos de los activos para maximizar el Sharpe Ratio o minimizar la volatilidad.
         - **Modelo Black-Litterman:** Ajusta los retornos esperados del mercado incorporando las opiniones de los inversores (vistas) y su nivel de confianza.
         - **Backtesting:** Compara el rendimiento acumulado del portafolio optimizado contra un benchmark seleccionado, mostrando resultados históricos.
-        - **VaR (Valor en Riesgo):** El peor retorno esperado bajo un nivel de confianza determinado (por ejemplo, 95%).
-        - **CVaR (Valor Condicional en Riesgo):** Promedio de las pérdidas esperadas bajo el nivel de confianza especificado.
         """)
+
+
+
+
+
+
+
+
 
 
 
