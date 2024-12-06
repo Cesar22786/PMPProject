@@ -127,7 +127,6 @@ end_date = st.sidebar.date_input("Fecha de fin:", pd.to_datetime("2023-01-01"))
 # Pesos iniciales
 weights_input = st.sidebar.text_input("Pesos iniciales (opcional):", ",".join(["0.2"] * len(etfs)))
 weights = [float(w.strip()) for w in weights_input.split(",")] if weights_input else [1 / len(etfs)] * len(etfs)
-
 guardar_csv = st.sidebar.checkbox("Guardar datos descargados en CSV")
 data = descargar_datos(etfs + [benchmark_symbol], start_date, end_date)
 
@@ -154,6 +153,25 @@ else:
         "Drawdown": drawdown
     }).T
     st.dataframe(stats_table.style.highlight_max(axis=1, color="lightgreen"))
+
+    st.header("📊 Distribución de Retornos")
+    for etf in etfs:
+        fig_hist = go.Figure()
+        fig_hist.add_trace(
+            go.Histogram(
+                x=rendimientos[etf],
+                nbinsx=50,
+                marker_color="#FFD700",
+                opacity=0.8
+            )
+        )
+        fig_hist.update_layout(
+            title=f"Distribución de Retornos para {etf}",
+            xaxis_title="Retorno",
+            yaxis_title="Frecuencia",
+            template="plotly_dark"
+        )
+        st.plotly_chart(fig_hist)
 
     st.header("🚀 Optimización del Portafolio")
     opt_weights, mean_returns, cov_matrix = optimizar_portafolio(rendimientos[etfs], weights)
